@@ -1,0 +1,391 @@
+package utils;
+
+import model.Offsets;
+import model.Pair;
+//import org.apache.commons.io.FileUtils;
+
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.*;
+import java.util.stream.Stream;
+
+public class FileUtil {
+
+    //Read from file given file name/path
+    public static String readFromFile(String inputFilePath, boolean removePunctuations) {
+
+        String content = null;
+        try {
+            File file = new File(inputFilePath);
+            FileReader fileReader = new FileReader(file);
+            BufferedReader bufferedReader = new BufferedReader(fileReader);
+            StringBuilder sb = new StringBuilder();
+            String line = bufferedReader.readLine();
+
+            while (line != null) {
+                sb.append(line.trim()).append(" ");
+                line = bufferedReader.readLine();
+            }
+            content = sb.toString();
+        } catch (FileNotFoundException ex) {
+            System.err.println("Input file not Found.");
+            ex.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return removePunctuations ? content.replaceAll("\\p{Punct}", "").toLowerCase() : content.toLowerCase();
+    }
+
+    //Get offsets for mapper
+    public static List<Offsets> getMapperOffsets(String inputFilePath, int mapperCount) {
+
+        List<Offsets> offsets = new ArrayList<>();
+        int lineCount = 0;
+        try {
+            File file = new File(inputFilePath);
+            FileReader fileReader = new FileReader(file);
+            BufferedReader bufferedReader = new BufferedReader(fileReader);
+            StringBuilder sb = new StringBuilder();
+            String line = bufferedReader.readLine();
+
+            while (line != null) {
+                sb.append(line.trim()).append(" ");
+                line = bufferedReader.readLine();
+                lineCount++;
+            }
+        } catch (FileNotFoundException ex) {
+            System.err.println("Input file not Found.");
+            ex.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            int itr = 0;
+            int perMapper = lineCount / mapperCount;
+            while (itr < lineCount) {
+                offsets.add(new Offsets(itr, (itr + perMapper > lineCount) || mapperCount == 1 ? lineCount - itr : perMapper));
+                itr += perMapper;
+                mapperCount--;
+                if (mapperCount == 0)
+                    break;
+            }
+        }
+        return offsets;
+
+    }
+
+    //Generate directories where intermediate files will be stored
+    public static String generateIntermediateDirectoryStruc(int directoryCount, int fileCount) {
+        String pathName = "intermediate/intermediate_" + (directoryCount);
+        File dir = new File(pathName);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        for (int i = 0; i < fileCount; i++) {
+            try {
+                File myObj = new File("intermediate/intermediate_" + (directoryCount) + "/intermediate_" + (i + 1) + ".txt");
+                if (!myObj.createNewFile()) {
+                    System.out.println("File already exists.");
+                }
+            } catch (IOException e) {
+                System.out.println("An error occurred.");
+                e.printStackTrace();
+            }
+        }
+        return pathName;
+    }
+
+
+    //Write to intermediate file
+    public static void writeToIntFile(int mapWorkerID, Pair p, int numberOfMappers) {
+        String keyValue = p.getKey() + " " + p.getValue() + System.lineSeparator();
+        String fileName = String.valueOf(((Math.abs(p.getKey().hashCode())) % numberOfMappers) + 1);
+        try {
+            FileWriter fw = new FileWriter("intermediate/intermediate_" + mapWorkerID + "/intermediate_" + (fileName) + ".txt", true);
+            BufferedWriter bw = new BufferedWriter(fw);
+            bw.write(keyValue);
+            bw.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    //Read the input file for the given offsets
+    public static String readWithOffset(String path, Offsets offset, boolean removePunctuations) {
+        String line = "";
+
+        for (int i = 0; i < offset.getLength(); i++) {
+            try (Stream<String> lines = Files.lines(Paths.get(path))) {
+                line += lines.skip(offset.getOffsetStart() + i).findFirst().get() + " ";
+                line = removePunctuations ? line.replaceAll("\\p{Punct}","").toLowerCase() : line.toLowerCase();
+
+            } catch (IOException e) {
+                System.out.println(e);
+            }
+        }
+        return line.trim();
+    }
+
+    //Write contents to given file
+    public static void writeToFile(String newFileName, String contentToWrite) {
+        createFile(newFileName);
+        try {
+            FileWriter myWriter = new FileWriter(newFileName);
+            myWriter.write(contentToWrite);
+            myWriter.close();
+        } catch (IOException e) {
+            System.out.println("An error occurred.");
+            e.printStackTrace();
+        }
+    }
+
+    //Create requested file
+    public static void createFile(String fileName) {
+        try {
+            File myObj = new File(fileName);
+            if (!myObj.createNewFile()) {
+                System.out.println("File already exists.");
+            }
+        } catch (IOException e) {
+            System.out.println("An error occurred.");
+            e.printStackTrace();
+        }
+    }
+
+    //Read all files from a directory
+    public static List<String> readFromDirectory(String directory) {
+        File folder = new File(directory);
+        return readFilesForFolder(folder);
+
+    }
+
+    //Read all files from a folder
+    public static List<String> readFilesForFolder(final File folder) {
+        List<String> folderContents = new ArrayList<>();
+        for (File fileEntry : folder.listFiles()) {
+            if (fileEntry.isDirectory()) {
+                readFilesForFolder(fileEntry);
+            } else {
+                folderContents.addAll(readFromIntermediateFile(fileEntry.getPath()));
+            }
+        }
+
+        return folderContents;
+    }
+
+    //Read contenst from given intermediate file
+    public static List<String> readFromIntermediateFile(String inputFilePath) {
+        List<String> fileContents = new ArrayList<>();
+        try {
+            File file = new File(inputFilePath);
+            FileReader fileReader = new FileReader(file);
+            BufferedReader bufferedReader = new BufferedReader(fileReader);
+            StringBuilder sb = new StringBuilder();
+            String line = bufferedReader.readLine();
+
+            while (line != null) {
+                fileContents.add(sb.append(line.trim()).toString());
+                sb.setLength(0);
+                line = bufferedReader.readLine();
+            }
+        } catch (FileNotFoundException ex) {
+            System.err.println("Input file not Found.");
+            ex.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return fileContents;
+    }
+
+    //Clean up intermediate folders
+    public static void cleanupIntermediateFiles(String directoryToCleanup) throws IOException {
+        //FileUtils.deleteDirectory(new File(directoryToCleanup));
+    }
+
+
+    //Convert pairs to string
+    public static String pairListToString(List<Pair> pairs) {
+        StringBuilder mergedResults = new StringBuilder();
+        pairs.stream().forEach(p -> {
+            mergedResults.append(p.getKey()).append(" ").append(p.getValue()).append(System.lineSeparator());
+        });
+        return mergedResults.toString();
+    }
+
+    public static Pair<String, Integer> stringToPair(String pairString) {
+        return new Pair(pairString, null);
+    }
+
+    public static String readFromFileCompareUtil(String inputFilePath) {
+
+        String content = null;
+        try {
+            File file = new File(inputFilePath);
+            FileReader fileReader = new FileReader(file);
+            BufferedReader bufferedReader = new BufferedReader(fileReader);
+            StringBuilder sb = new StringBuilder();
+            String line = bufferedReader.readLine();
+
+            while (line != null) {
+                sb.append(line.trim()).append("-");
+                line = bufferedReader.readLine();
+            }
+            content = sb.toString();
+        } catch (FileNotFoundException ex) {
+            System.err.println("Input file not Found.");
+            ex.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+
+        }
+        return content.trim();
+
+    }
+
+    public static boolean fileComparer(String path1, String path2) {
+        String content1 = readFromFileCompareUtil(path1);
+        String content2 = readFromFileCompareUtil(path2);
+        return content1.trim().equals(content2.trim());
+    }
+
+//    public static boolean fileComparer(String filePath1, String filePath2){
+//        List<String> fileContent1 = readFromIntermediateFile(filePath1);
+//        List<String> fileContent2 = readFromIntermediateFile(filePath2);
+//        if(fileContent1.get(fileContent1.size() - 1).trim().isEmpty()){
+//            fileContent1.remove(fileContent1.size() - 1);
+//        }
+//
+//        if(fileContent2.get(fileContent2.size() - 1).trim().isEmpty()){
+//            fileContent2.remove(fileContent2.size() - 1);
+//        }
+//
+//        if(fileContent1.size() != fileContent2.size())
+//            return false;
+//        List<Pair<String, String>> pairResults1 = fileContent1.stream()
+//                                                              .map(record ->recordToPair(record))
+//                                                              .collect(Collectors.toList());
+//        List<Pair<String, String>> pairResults2 = fileContent2.stream()
+//                                                              .map(record ->recordToPair(record))
+//                                                              .collect(Collectors.toList());
+//        Collections.sort(pairResults1, (a, b) -> {
+//            return a.getKey().compareTo(b.getKey());
+//        });
+//        Collections.sort(pairResults2, (a, b) -> {
+//            return a.getKey().compareTo(b.getKey());
+//        });
+//        for(int itr = 0; itr < pairResults1.size(); itr++){
+//            if(!pairResults1.get(itr).getKey().equals(pairResults2.get(itr).getKey()) ||
+//               !pairResults1.get(itr).getValue().equals(pairResults2.get(itr).getValue())){
+//                return false;
+//            }
+//        }
+//        return true;
+//    }
+//
+//    private static Pair recordToPair(String record) {
+//        String[] keyValue = record.trim().split(" ");
+//        return new Pair(keyValue[0], keyValue[1]);
+//    }
+
+    public static boolean sparkOutputCompareUtil(String outputDir, String sparkPath){
+        List<String> l1 = readFromSparkOutputFile(sparkPath);
+        List<String> l2 = readFromDir(outputDir);
+        System.out.println("Retrieving Spark Output and Sorting Keys");
+        Collections.sort(l1, (a, b) -> {
+            String[] s1 = a.split(" ");
+            String[] s2 = b.split(" ");
+            return s1[0].compareTo(s2[0]);
+        });
+        System.out.println("Merging all Reducer outputs and Sorting Keys");
+        Collections.sort(l2, (a, b) -> {
+            String[] s1 = a.split(" ");
+            String[] s2 = b.split(" ");
+            return s1[0].compareTo(s2[0]);
+        });
+        System.out.println("Spark Output File Result : " + l1);
+        System.out.println("Merged Reducer Output Files Result" + l2);
+        return l1.size() == l2.size() && listCompare(l1, l2);
+
+    }
+
+    private static boolean listCompare(List<String> l1, List<String> l2) {
+        for(int i=0;i<l1.size();i++){
+            if(!l1.get(i).equals(l2.get(i)))
+                return false;
+        }
+        return  true;
+    }
+
+    public static List<String> readFromDir(String path){
+        File dir = new File(path);
+        List<String> ans = new ArrayList<>();
+        for(File file : dir.listFiles()) {
+            ans.addAll(readFromOutputFile(file));
+        }
+        return ans;
+    }
+
+    public static List<String> readFromSparkOutputFile(String inputFilePath) {
+        List<String> ans = new ArrayList<>();
+        try {
+            File file = new File(inputFilePath);
+            FileReader fileReader = new FileReader(file);
+            BufferedReader bufferedReader = new BufferedReader(fileReader);
+            StringBuilder sb = new StringBuilder();
+            String line = bufferedReader.readLine();
+
+            while (line != null) {
+                line = line.trim();
+                if(!line.isEmpty())
+                    ans.add(line);
+                line = bufferedReader.readLine();
+
+            }
+        } catch (FileNotFoundException ex) {
+            System.err.println("Input file not Found.");
+            ex.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        finally {
+
+        }
+        return ans;
+
+    }
+
+    public static List<String> readFromOutputFile(File file) {
+        List<String> ans = new ArrayList<>();
+        try {
+            FileReader fileReader = new FileReader(file);
+            BufferedReader bufferedReader = new BufferedReader(fileReader);
+            String line = bufferedReader.readLine();
+
+            while (line != null) {
+                line = line.trim();
+                if(!line.isEmpty())
+                    ans.add(line);
+                line = bufferedReader.readLine();
+
+            }
+        } catch (FileNotFoundException ex) {
+            System.err.println("Input file not Found.");
+            ex.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        finally {
+
+        }
+        return ans;
+
+    }
+}
